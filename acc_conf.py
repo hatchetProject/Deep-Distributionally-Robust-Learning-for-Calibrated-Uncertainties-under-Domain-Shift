@@ -467,6 +467,7 @@ class Relaxed_DeepCORAL(nn.Module):
         clf = self.cls_fc(source)
         return clf, coral_loss
 
+"""
 ## Bayesian network model
 import pyro
 from pyro.distributions import Normal, Categorical
@@ -563,7 +564,7 @@ for j in range(num_iterations):
     print("Epoch ", j, " Loss ", total_epoch_loss_train)
 ## Temperature scaling model (imported from temperature_scaling.py)
 ## Used directly in function
-
+"""
 def entropy(p):
     p[p<1e-20] = 1e-20 # Deal with numerical issues
     return -torch.sum(p.mul(torch.log2(p)))
@@ -571,6 +572,661 @@ def entropy(p):
 torch.set_default_tensor_type('torch.cuda.FloatTensor')
 DEVICE = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
 
+def confidence_accuracy_plot(source, target):
+    # You need to run the training process first and then plot the graph, we directly load the saved model
+    print('Using device:', DEVICE)
+    torch.manual_seed(200)
+    import matplotlib
+    matplotlib.use('Agg')
+    import matplotlib.pyplot as plt
+    N_CLASSES = 65
+    BATCH_SIZE = CONFIG["batch_size"]
+    baseline_int = [0, 1]
+    ce_func = nn.CrossEntropyLoss()
+    plt.figure(figsize=(15, 10))
+    plt.plot(baseline_int, np.zeros(len(baseline_int)), c='k', linestyle='--')
+    print("Source distribution: %s; Target distribution: %s" % (source, target))
+    task = source[0]+target[0]
+
+    """
+    test_loader = dataloader("OfficeHome/", target, 32, False)
+    # End2end with fixed r
+    theta = thetaNet_e2e(N_CLASSES)
+    theta.load_state_dict(torch.load("models/theta_rba_fixed_" + task + ".pkl"))
+    discriminator = torch.load("models/dis_rba_fixed_" + task + ".pkl")
+    theta.eval()
+    discriminator.eval()
+    mis_num, cor_num, train_loss, train_acc, test_loss, test_acc, dis_loss, dis_acc, entropy_dis, entropy_clas, mis_entropy_clas = 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0
+    cor_entropy_clas = 0
+    confidence = torch.FloatTensor([1])
+    accuracy = torch.FloatTensor([0])
+    test_num = 0
+    with torch.no_grad():
+        for data, label in test_loader:
+            test_num += data.shape[0]
+            data = data.cuda()
+            pred = F.softmax(discriminator(data, None, None, None, None).detach(), dim=1)
+            entropy_dis += entropy(pred)
+            r_target = (pred[:, 1] / pred[:, 0]).reshape(-1, 1)
+            target_out = theta(data, None, r_target).detach()
+            prediction_t = F.softmax(target_out, dim=1)
+            entropy_clas += entropy(prediction_t) / math.log(N_CLASSES, 2)
+            test_loss += float(ce_func(target_out, label))
+            test_acc += torch.sum(torch.argmax(prediction_t, dim=1) == label).float()
+            mis_idx = (torch.argmax(prediction_t, dim=1) != label).nonzero().reshape(-1, )
+            mis_pred = prediction_t[mis_idx]
+            cor_idx = (torch.argmax(prediction_t, dim=1) == label).nonzero().reshape(-1, )
+            cor_pred = prediction_t[cor_idx]
+            mis_entropy_clas += entropy(mis_pred) / math.log(N_CLASSES, 2)
+            mis_num += mis_idx.shape[0]
+            cor_entropy_clas += entropy(cor_pred) / math.log(N_CLASSES, 2)
+            cor_num += cor_idx.shape[0]
+            batch_confidence = torch.max(prediction_t, dim=1).values.cpu()
+            batch_accuracy = (torch.argmax(prediction_t, dim=1) == label).cpu().float()
+            confidence = torch.cat((confidence, batch_confidence), dim=0)
+            accuracy = torch.cat((accuracy, batch_accuracy), dim=0)
+        print (("End2end training with fixed R: test_loss:%.3f, test_acc: %.4f, ent_dis: %.3f, ent_clas: %.3f, mis_ent_clas: %.3f, cor_ent: %.3f") %
+               (test_loss * 1e3 / test_num, test_acc / test_num, entropy_dis / test_num, entropy_clas / test_num,
+                mis_entropy_clas / mis_num, cor_entropy_clas / cor_num))
+    confidence = confidence[1:].numpy()
+    accuracy = accuracy[1:].numpy()
+    x_value = []
+    y_value = []
+    #intervals = [0, 0.998, 1]  # aw
+    intervals = [0.0, 0.52, 0.64, 0.67, 0.7, 0.8, 0.84, 0.86, 0.9, 0.92, 0.95, 0.955,
+                 0.965, 0.97, 0.975, 0.99, 0.992, 0.995, 0.997, 0.998, 1]
+    for i in range(len(intervals) - 1):
+        int_idx = ((confidence >= intervals[i]) == (confidence < intervals[i + 1]))  # 0 and 1
+        x_value.append(np.sum(confidence[int_idx]) / np.sum(int_idx))
+        y_value.append((np.sum(confidence[int_idx]) - np.sum(accuracy[int_idx])) / np.sum(int_idx))
+    print (x_value)
+    plt.plot(np.arange(0, 100, 5) / 100., y_value, label="DRBA", marker="d", color="#7e1e9c")
+
+    # End2end with alternative r
+    theta = thetaNet_e2e(N_CLASSES)
+    theta.load_state_dict(torch.load("models/theta_rba_alter_" + task + ".pkl"))
+    discriminator = torch.load("models/dis_rba_alter_" + task + ".pkl", encoding="iso-8859-1")
+    mis_num, cor_num, train_loss, train_acc, test_loss, test_acc, dis_loss, dis_acc, entropy_dis, entropy_clas, mis_entropy_clas = 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0
+    cor_entropy_clas = 0
+    confidence = torch.FloatTensor([1])
+    accuracy = torch.FloatTensor([0])
+    test_num = 0
+    with torch.no_grad():
+        for data, label in test_loader:
+            test_num += data.shape[0]
+            data = data.cuda()
+            pred = F.softmax(discriminator(data, None, None, None, None).detach(), dim=1)
+            entropy_dis += entropy(pred)
+            r_target = (pred[:, 1] / pred[:, 0]).reshape(-1, 1)
+            target_out = theta(data, None, r_target).detach()
+            prediction_t = F.softmax(target_out, dim=1)
+            entropy_clas += entropy(prediction_t) / math.log(N_CLASSES, 2)
+            test_loss += float(ce_func(target_out, label))
+            test_acc += torch.sum(torch.argmax(prediction_t, dim=1) == label).float()
+            mis_idx = (torch.argmax(prediction_t, dim=1) != label).nonzero().reshape(-1, )
+            mis_pred = prediction_t[mis_idx]
+            cor_idx = (torch.argmax(prediction_t, dim=1) == label).nonzero().reshape(-1, )
+            cor_pred = prediction_t[cor_idx]
+            mis_entropy_clas += entropy(mis_pred) / math.log(N_CLASSES, 2)
+            mis_num += mis_idx.shape[0]
+            cor_entropy_clas += entropy(cor_pred) / math.log(N_CLASSES, 2)
+            cor_num += cor_idx.shape[0]
+            batch_confidence = torch.max(prediction_t, dim=1).values.cpu()
+            batch_accuracy = (torch.argmax(prediction_t, dim=1) == label).cpu().float()
+            confidence = torch.cat((confidence, batch_confidence), dim=0)
+            accuracy = torch.cat((accuracy, batch_accuracy), dim=0)
+        print ((
+                   "End2end training with alternative R: test_loss:%.3f, test_acc: %.4f, ent_dis: %.3f, ent_clas: %.3f, mis_ent_clas: %.3f, cor_ent: %.3f") %
+               (test_loss * 1e3 / test_num, test_acc / test_num, entropy_dis / test_num, entropy_clas / test_num,
+                mis_entropy_clas / mis_num, cor_entropy_clas / cor_num))
+    confidence = confidence[1:].numpy()
+    accuracy = accuracy[1:].numpy()
+    x_value = []
+    y_value = []
+    intervals = [0.0, 0.6, 0.65, 0.67, 0.7, 0.77, 0.8, 0.91, 0.92, 0.94,
+                 0.96, 0.97, 0.975, 0.98, 0.983, 0.987, 0.99, 0.992, 0.995, 0.997, 1]  # aw
+    for i in range(len(intervals) - 1):
+        int_idx = ((confidence >= intervals[i]) == (confidence < intervals[i + 1]))  # 0 and 1
+        x_value.append(np.sum(confidence[int_idx]) / np.sum(int_idx))
+        y_value.append((np.sum(confidence[int_idx]) - np.sum(accuracy[int_idx])) / np.sum(int_idx))
+    print(x_value)
+    plt.plot(np.arange(0, 100, 5) / 100., y_value, label="E2C2", marker="d", color="#033500")
+    """
+
+    # Relaxed DeepCORAL with alternative training
+    theta = thetaNet(2048, N_CLASSES)
+    theta.load_state_dict(torch.load("models/theta_rba_alter_aligned_relaxed_" + task + ".pkl"))
+    discriminator = torch.load("models/dis_rba_alter_aligned_relaxed_" + task + ".pkl")
+    x_t = torch.load("aligned_data/deepcoral/" + source + "_" + target + "_targetAlignedRelaxed.pkl")
+    y_t = torch.load("aligned_data/deepcoral/" + source + "_" + target + "_targetYRelaxed.pkl")
+    x_t, y_t = x_t.to(DEVICE), y_t.to(DEVICE)
+    test_dataset = Data.TensorDataset(x_t, y_t)
+    test_loader = Data.DataLoader(
+        dataset=test_dataset,
+        batch_size=BATCH_SIZE,
+        shuffle=True,
+    )
+    mis_num, cor_num, train_loss, train_acc, test_loss, test_acc, dis_loss, dis_acc, entropy_dis, entropy_clas, mis_entropy_clas = 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0
+    cor_entropy_clas = 0
+    confidence = torch.FloatTensor([1])
+    accuracy = torch.FloatTensor([0])
+    test_num = 0
+    with torch.no_grad():
+        theta.eval()
+        discriminator.eval()
+        for data, label in test_loader:
+            test_num += data.shape[0]
+            pred = F.softmax(discriminator(data, None, None, None, None).detach(), dim=1)
+            entropy_dis += entropy(pred)
+            r_target = (pred[:, 0] / pred[:, 1]).reshape(-1, 1)
+            target_out = theta(data, None, r_target).detach()
+            prediction_t = F.softmax(target_out, dim=1)
+            entropy_clas += entropy(prediction_t) / math.log(N_CLASSES, 2)
+            test_loss += float(ce_func(target_out, label))
+            test_acc += torch.sum(torch.argmax(prediction_t, dim=1) == label).float()
+            mis_idx = (torch.argmax(prediction_t, dim=1) != label).nonzero().reshape(-1, )
+            mis_pred = prediction_t[mis_idx]
+            cor_idx = (torch.argmax(prediction_t, dim=1) == label).nonzero().reshape(-1, )
+            cor_pred = prediction_t[cor_idx]
+            mis_entropy_clas += entropy(mis_pred) / math.log(N_CLASSES, 2)
+            mis_num += mis_idx.shape[0]
+            cor_entropy_clas += entropy(cor_pred) / math.log(N_CLASSES, 2)
+            cor_num += cor_idx.shape[0]
+            batch_confidence = torch.max(prediction_t, dim=1).values.cpu()
+            batch_accuracy = (torch.argmax(prediction_t, dim=1) == label).cpu().float()
+            confidence = torch.cat((confidence, batch_confidence), dim=0)
+            accuracy = torch.cat((accuracy, batch_accuracy), dim=0)
+        print (("Relaxed aligned data with alternatively trained R: test_loss:%.3f, test_acc: %.4f, ent_dis: %.3f, ent_clas: %.3f, mis_ent_clas: %.3f, cor_ent: %.3f") %
+               (test_loss * 1e3 / test_num, test_acc / test_num, entropy_dis / test_num, entropy_clas / test_num,
+                mis_entropy_clas / mis_num, cor_entropy_clas / cor_num))
+
+    confidence = confidence[1:].numpy()
+    accuracy = accuracy[1:].numpy()
+    x_value = []
+    y_value = []
+    #intervals = [0, 0.27, 0.33, 0.4, 0.5, 0.6, 0.7, 0.72, 0.75, 0.77, 0.8, 0.83, 0.85, 0.87, 0.90, 0.92, 0.94, 0.95,
+    #             0.96, 0.97, 1]  # aw
+    intervals = [0.0, 0.6, 0.65, 0.67, 0.7, 0.72, 0.77, 0.8, 0.85, 0.87, 0.90, 0.92, 0.93, 0.94, 0.95,
+                 0.96, 0.97, 0.98, 0.985, 0.99, 1]  # aw
+    for i in range(len(intervals) - 1):
+        int_idx = ((confidence >= intervals[i]) == (confidence < intervals[i + 1]))  # 0 and 1
+        x_value.append(np.sum(confidence[int_idx]) / np.sum(int_idx))
+        y_value.append((np.sum(confidence[int_idx]) - np.sum(accuracy[int_idx])) / np.sum(int_idx))
+    print(x_value)
+    plt.plot(np.arange(0, 100, 5) / 100., y_value, label="E2C2-R-DCORAL", marker="d", color="#0343df")
+
+    # Aligned data with alternative training
+    theta = thetaNet(2048, N_CLASSES)
+    theta.load_state_dict(torch.load("models/theta_rba_alter_aligned_"+task+".pkl"))
+    discriminator = torch.load("models/dis_rba_alter_aligned_"+task+".pkl")
+    x_t = torch.load("aligned_data/deepcoral/" + source + "_" + target + "_targetAligned.pkl")
+    y_t = torch.load("aligned_data/deepcoral/" + source + "_" + target + "_targetY.pkl")
+    x_t, y_t = x_t.to(DEVICE), y_t.to(DEVICE)
+    test_dataset = Data.TensorDataset(x_t, y_t)
+    test_loader = Data.DataLoader(
+        dataset=test_dataset,
+        batch_size=BATCH_SIZE,
+        shuffle=True,
+    )
+    mis_num, cor_num, train_loss, train_acc, test_loss, test_acc, dis_loss, dis_acc, entropy_dis, entropy_clas, mis_entropy_clas = 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0
+    cor_entropy_clas = 0
+    confidence = torch.FloatTensor([1])
+    accuracy = torch.FloatTensor([0])
+    test_num = 0
+    theta.eval()
+    discriminator.eval()
+    with torch.no_grad():
+        for data, label in test_loader:
+            test_num += data.shape[0]
+            pred = F.softmax(discriminator(data, None, None, None, None).detach(), dim=1)
+            entropy_dis += entropy(pred)
+            r_target = (pred[:, 0] / pred[:, 1]).reshape(-1, 1)
+            target_out = theta(data, None, r_target).detach()
+            prediction_t = F.softmax(target_out, dim=1)
+            entropy_clas += entropy(prediction_t) / math.log(N_CLASSES, 2)
+            test_loss += float(ce_func(target_out, label))
+            test_acc += torch.sum(torch.argmax(prediction_t, dim=1) == label).float()
+            mis_idx = (torch.argmax(prediction_t, dim=1) != label).nonzero().reshape(-1, )
+            mis_pred = prediction_t[mis_idx]
+            cor_idx = (torch.argmax(prediction_t, dim=1) == label).nonzero().reshape(-1, )
+            cor_pred = prediction_t[cor_idx]
+            mis_entropy_clas += entropy(mis_pred) / math.log(N_CLASSES, 2)
+            mis_num += mis_idx.shape[0]
+            cor_entropy_clas += entropy(cor_pred) / math.log(N_CLASSES, 2)
+            cor_num += cor_idx.shape[0]
+            batch_confidence = torch.max(prediction_t, dim=1).values.cpu()
+            batch_accuracy = (torch.argmax(prediction_t, dim=1) == label).cpu().float()
+            confidence = torch.cat((confidence, batch_confidence), dim=0)
+            accuracy = torch.cat((accuracy, batch_accuracy), dim=0)
+        print (("Aligned data with alternatively trained R: test_loss:%.3f, test_acc: %.4f, ent_dis: %.3f, ent_clas: %.3f, mis_ent_clas: %.3f, cor_ent: %.3f") %
+               (test_loss * 1e3 / test_num, test_acc / test_num, entropy_dis / test_num, entropy_clas / test_num, mis_entropy_clas / mis_num, cor_entropy_clas /cor_num))
+
+    confidence = confidence[1:].numpy()
+    accuracy = accuracy[1:].numpy()
+    x_value = []
+    y_value = []
+    intervals = [0, 0.27, 0.33, 0.4, 0.45, 0.5, 0.55, 0.6, 0.65, 0.7, 0.72, 0.75, 0.77, 0.78, 0.79, 0.8, 0.83, 0.85,
+                 0.87, 0.90, 1]  # aw
+    #intervals = [0.0, 0.6, 0.65, 0.67, 0.7, 0.72, 0.77, 0.8, 0.82, 0.85, 0.87, 0.88, 0.90, 0.92, 0.93, 0.94, 0.95,
+    #             0.955, 0.96, 0.97, 1]  # aw
+    for i in range(len(intervals)-1):
+        int_idx = ((confidence>=intervals[i]) == (confidence<intervals[i+1]))  # 0 and 1
+        x_value.append(np.sum(confidence[int_idx])/np.sum(int_idx))
+        y_value.append((np.sum(confidence[int_idx]) - np.sum(accuracy[int_idx]))/np.sum(int_idx))
+    print(x_value)
+    plt.plot(np.arange(0, 100, 5)/100., y_value, label="E2C2-DCORAL", marker="d", color="#15b01a")
+
+    # Aligned data with fixed R
+    theta = thetaNet(2048, N_CLASSES)
+    theta.load_state_dict(torch.load("models/theta_rba_fixed_aligned_" + task + ".pkl"))
+    discriminator = torch.load("models/dis_rba_fixed_aligned_" + task + ".pkl")
+    x_t = torch.load("aligned_data/deepcoral/" + source + "_" + target + "_targetAligned.pkl")
+    y_t = torch.load("aligned_data/deepcoral/" + source + "_" + target + "_targetY.pkl")
+    x_t, y_t = x_t.to(DEVICE), y_t.to(DEVICE)
+    test_dataset = Data.TensorDataset(x_t, y_t)
+    test_loader = Data.DataLoader(
+        dataset=test_dataset,
+        batch_size=BATCH_SIZE,
+        shuffle=True,
+    )
+    mis_num, cor_num, train_loss, train_acc, test_loss, test_acc, dis_loss, dis_acc, entropy_dis, entropy_clas, mis_entropy_clas = 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0
+    cor_entropy_clas = 0
+    confidence = torch.FloatTensor([1])
+    accuracy = torch.FloatTensor([0])
+    test_num = 0
+    with torch.no_grad():
+        for data, label in test_loader:
+            test_num += data.shape[0]
+            pred = F.softmax(discriminator(data, None, None, None, None).detach(), dim=1)
+            entropy_dis += entropy(pred)
+            r_target = (pred[:, 0] / pred[:, 1]).reshape(-1, 1)
+            target_out = theta(data, None, r_target).detach()
+            prediction_t = F.softmax(target_out, dim=1)
+            entropy_clas += entropy(prediction_t) / math.log(N_CLASSES, 2)
+            test_loss += float(ce_func(target_out, label))
+            test_acc += torch.sum(torch.argmax(prediction_t, dim=1) == label).float()
+            mis_idx = (torch.argmax(prediction_t, dim=1) != label).nonzero().reshape(-1, )
+            mis_pred = prediction_t[mis_idx]
+            cor_idx = (torch.argmax(prediction_t, dim=1) == label).nonzero().reshape(-1, )
+            cor_pred = prediction_t[cor_idx]
+            mis_entropy_clas += entropy(mis_pred) / math.log(N_CLASSES, 2)
+            mis_num += mis_idx.shape[0]
+            cor_entropy_clas += entropy(cor_pred) / math.log(N_CLASSES, 2)
+            cor_num += cor_idx.shape[0]
+            batch_confidence = torch.max(prediction_t, dim=1).values.cpu()
+            batch_accuracy = (torch.argmax(prediction_t, dim=1) == label).cpu().float()
+            confidence = torch.cat((confidence, batch_confidence), dim=0)
+            accuracy = torch.cat((accuracy, batch_accuracy), dim=0)
+        print (("Aligned data with Fixed R: test_loss:%.3f, test_acc: %.4f, ent_dis: %.3f, ent_clas: %.3f, mis_ent_clas: %.3f, cor_ent: %.3f") %
+               (test_loss * 1e3 / test_num, test_acc / test_num, entropy_dis / test_num, entropy_clas / test_num,
+                mis_entropy_clas / mis_num, cor_entropy_clas / cor_num))
+    confidence = confidence[1:].numpy()
+    accuracy = accuracy[1:].numpy()
+    x_value = []
+    y_value = []
+    #intervals = [0, 0.33, 0.4, 0.5, 0.6, 0.7, 0.72, 0.75, 0.77, 0.8, 0.83, 0.85, 0.87, 0.90, 0.92, 0.94, 0.95,
+    #             0.96, 0.97, 0.98, 1]  # aw
+    intervals = [0.0, 0.6, 0.65, 0.67, 0.7, 0.72, 0.77, 0.8, 0.85, 0.87, 0.90, 0.92, 0.93, 0.94, 0.95,
+                 0.96, 0.97, 0.98, 0.985, 0.99, 1]  # aw
+    for i in range(len(intervals) - 1):
+        int_idx = ((confidence >= intervals[i]) == (confidence < intervals[i + 1]))  # 0 and 1
+        x_value.append(np.sum(confidence[int_idx]) / np.sum(int_idx))
+        y_value.append((np.sum(confidence[int_idx]) - np.sum(accuracy[int_idx])) / np.sum(int_idx))
+    print(x_value)
+    plt.plot(np.arange(0, 100, 5) / 100., y_value, label="DRBA-DCORAL", marker="d", color="#653700")
+
+
+    test_loader = dataloader("office/", target, 32, False)
+    # IID
+    theta = torch.load("models/sourceOnly_"+source+"_"+target+".pkl", encoding="iso-8859-1")
+    mis_num, cor_num, train_loss, train_acc, test_loss, test_acc, dis_loss, dis_acc, entropy_dis, entropy_clas, mis_entropy_clas = 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0
+    cor_entropy_clas = 0
+    confidence = torch.FloatTensor([1])
+    accuracy = torch.FloatTensor([0])
+    test_num = 0
+    with torch.no_grad():
+        for data, label in test_loader:
+            test_num += data.shape[0]
+            data = data.cuda()
+            target_out = theta(data).detach()
+            prediction_t = F.softmax(target_out, dim=1)
+            entropy_clas += entropy(prediction_t) / math.log(N_CLASSES, 2)
+            test_loss += float(ce_func(target_out, label))
+            test_acc += float(torch.sum(torch.argmax(prediction_t, dim=1) == label))
+            mis_idx = (torch.argmax(prediction_t, dim=1) != label).nonzero().reshape(-1, )
+            mis_pred = prediction_t[mis_idx]
+            cor_idx = (torch.argmax(prediction_t, dim=1) == label).nonzero().reshape(-1, )
+            cor_pred = prediction_t[cor_idx]
+            mis_entropy_clas += entropy(mis_pred) / math.log(N_CLASSES, 2)
+            mis_num += mis_idx.shape[0]
+            cor_entropy_clas += entropy(cor_pred) / math.log(N_CLASSES, 2)
+            cor_num += cor_idx.shape[0]
+            batch_confidence = torch.max(prediction_t, dim=1).values.cpu()
+            batch_accuracy = (torch.argmax(prediction_t, dim=1) == label).cpu().float()
+            confidence = torch.cat((confidence, batch_confidence), dim=0)
+            accuracy = torch.cat((accuracy, batch_accuracy), dim=0)
+    print (("IID: test_loss:%.3f, test_acc: %.4f, ent_dis: %.3f, ent_clas: %.3f, mis_ent_clas: %.3f, cor_ent: %.3f") %
+           (test_loss * 1e3 / test_num, test_acc / test_num, entropy_dis / test_num, entropy_clas / test_num,
+            mis_entropy_clas / mis_num, cor_entropy_clas / cor_num))
+    confidence = confidence[1:].numpy()
+    accuracy = accuracy[1:].numpy()
+    x_value = []
+    y_value = []
+    #intervals = [0, 0.27, 0.33, 0.4, 0.5, 0.6, 0.7, 0.72, 0.75, 0.77, 0.8, 0.83, 0.85, 0.87, 0.90, 0.92, 0.94, 0.95,
+    #             0.96, 0.97, 1]  # aw
+    intervals = [0.0, 0.6, 0.65, 0.67, 0.7, 0.72, 0.77, 0.8, 0.85, 0.87, 0.90, 0.92, 0.93, 0.94, 0.95,
+                 0.96, 0.97, 0.98, 0.985, 0.99, 1]  # aw
+    for i in range(len(intervals) - 1):
+        int_idx = ((confidence >= intervals[i]) == (confidence < intervals[i + 1]))  # 0 and 1
+        x_value.append(np.sum(confidence[int_idx]) / np.sum(int_idx))
+        y_value.append((np.sum(confidence[int_idx]) - np.sum(accuracy[int_idx])) / np.sum(int_idx))
+    print(x_value)
+    plt.plot(np.arange(0, 100, 5)/100., y_value, label="Source Only", marker=".", color="#e50000")
+
+    # DeepCORAL
+    theta = torch.load("models/deepcoral_"+source+"_"+target+".pkl", encoding="iso-8859-1")
+    theta.isTrain = False
+    mis_num, cor_num, train_loss, train_acc, test_loss, test_acc, dis_loss, dis_acc, entropy_dis, entropy_clas, mis_entropy_clas = 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0
+    cor_entropy_clas = 0
+    confidence = torch.FloatTensor([1])
+    accuracy = torch.FloatTensor([0])
+    test_num = 0
+    with torch.no_grad():
+        for data, label in test_loader:
+            test_num += data.shape[0]
+            data = data.cuda()
+            target_out, _ = theta(data, None)
+            target_out = target_out.detach()
+            prediction_t = F.softmax(target_out, dim=1)
+            entropy_clas += entropy(prediction_t) / math.log(N_CLASSES, 2)
+            test_loss += float(ce_func(target_out, label))
+            test_acc += float(torch.sum(torch.argmax(prediction_t, dim=1) == label))
+            mis_idx = (torch.argmax(prediction_t, dim=1) != label).nonzero().reshape(-1, )
+            mis_pred = prediction_t[mis_idx]
+            cor_idx = (torch.argmax(prediction_t, dim=1) == label).nonzero().reshape(-1, )
+            cor_pred = prediction_t[cor_idx]
+            mis_entropy_clas += entropy(mis_pred) / math.log(N_CLASSES, 2)
+            mis_num += mis_idx.shape[0]
+            cor_entropy_clas += entropy(cor_pred) / math.log(N_CLASSES, 2)
+            cor_num += cor_idx.shape[0]
+            batch_confidence = torch.max(prediction_t, dim=1).values.cpu()
+            batch_accuracy = (torch.argmax(prediction_t, dim=1) == label).cpu().float()
+            confidence = torch.cat((confidence, batch_confidence), dim=0)
+            accuracy = torch.cat((accuracy, batch_accuracy), dim=0)
+    print (("DeepCORAL: test_loss:%.3f, test_acc: %.4f, ent_dis: %.3f, ent_clas: %.3f, mis_ent_clas: %.3f, cor_ent: %.3f") %
+           (test_loss * 1e3 / test_num, test_acc / test_num, entropy_dis / test_num, entropy_clas / test_num,
+            mis_entropy_clas / mis_num, cor_entropy_clas / cor_num))
+    confidence = confidence[1:].numpy()
+    accuracy = accuracy[1:].numpy()
+    x_value = []
+    y_value = []
+    #intervals = [0, 0.27, 0.33, 0.4, 0.5, 0.6, 0.7, 0.72, 0.75, 0.77, 0.8, 0.83, 0.85, 0.87, 0.90, 0.92, 0.94, 0.95,
+    #             0.96, 0.97, 1]  # aw
+    intervals = [0.0, 0.6, 0.65, 0.67, 0.7, 0.72, 0.77, 0.8, 0.85, 0.87, 0.90, 0.92, 0.93, 0.94, 0.95,
+                 0.96, 0.97, 0.98, 0.985, 0.99, 1]  # aw
+    for i in range(len(intervals) - 1):
+        int_idx = ((confidence >= intervals[i]) == (confidence < intervals[i + 1]))  # 0 and 1
+        x_value.append(np.sum(confidence[int_idx]) / np.sum(int_idx))
+        y_value.append((np.sum(confidence[int_idx]) - np.sum(accuracy[int_idx])) / np.sum(int_idx))
+    print(x_value)
+    plt.plot(np.arange(0, 100, 5) / 100., y_value, label="DCORAL", marker=".", color="#95d0fc")
+
+    # relaxed DeepCORAL
+    theta = torch.load("models/relaxed_deepcoral_" + source + "_" + target + ".pkl", encoding="iso-8859-1")
+    mis_num, cor_num, train_loss, train_acc, test_loss, test_acc, dis_loss, dis_acc, entropy_dis, entropy_clas, mis_entropy_clas = 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0
+    cor_entropy_clas = 0
+    confidence = torch.FloatTensor([1])
+    accuracy = torch.FloatTensor([0])
+    test_num = 0
+    with torch.no_grad():
+        for data, label in test_loader:
+            test_num += data.shape[0]
+            data = data.cuda()
+            target_out, _ = theta(data, None, None)
+            target_out = target_out.detach()
+            prediction_t = F.softmax(target_out, dim=1)
+            entropy_clas += entropy(prediction_t) / math.log(N_CLASSES, 2)
+            test_loss += float(ce_func(target_out, label))
+            test_acc += float(torch.sum(torch.argmax(prediction_t, dim=1) == label))
+            mis_idx = (torch.argmax(prediction_t, dim=1) != label).nonzero().reshape(-1, )
+            mis_pred = prediction_t[mis_idx]
+            cor_idx = (torch.argmax(prediction_t, dim=1) == label).nonzero().reshape(-1, )
+            cor_pred = prediction_t[cor_idx]
+            mis_entropy_clas += entropy(mis_pred) / math.log(N_CLASSES, 2)
+            mis_num += mis_idx.shape[0]
+            cor_entropy_clas += entropy(cor_pred) / math.log(N_CLASSES, 2)
+            cor_num += cor_idx.shape[0]
+            batch_confidence = torch.max(prediction_t, dim=1).values.cpu()
+            batch_accuracy = (torch.argmax(prediction_t, dim=1) == label).cpu().float()
+            confidence = torch.cat((confidence, batch_confidence), dim=0)
+            accuracy = torch.cat((accuracy, batch_accuracy), dim=0)
+    print (("Relaxed DeepCORAL: test_loss:%.3f, test_acc: %.4f, ent_dis: %.3f, ent_clas: %.3f, mis_ent_clas: %.3f, cor_ent: %.3f") %
+           (test_loss * 1e3 / test_num, test_acc / test_num, entropy_dis / test_num, entropy_clas / test_num,
+            mis_entropy_clas / mis_num, cor_entropy_clas / cor_num))
+    confidence = confidence[1:].numpy()
+    accuracy = accuracy[1:].numpy()
+    x_value = []
+    y_value = []
+    #intervals = [0, 0.27, 0.33, 0.4, 0.5, 0.6, 0.7, 0.72, 0.75, 0.77, 0.8, 0.83, 0.85, 0.87, 0.90, 0.92, 0.94, 0.95,
+    #             0.96, 0.97, 1]  # aw
+    intervals = [0.0, 0.6, 0.65, 0.67, 0.7, 0.72, 0.77, 0.8, 0.85, 0.87, 0.90, 0.92, 0.93, 0.94, 0.95,
+                 0.96, 0.97, 0.98, 0.985, 0.99, 1]  # aw
+    for i in range(len(intervals) - 1):
+        int_idx = ((confidence >= intervals[i]) == (confidence < intervals[i + 1]))  # 0 and 1
+        x_value.append(np.sum(confidence[int_idx]) / np.sum(int_idx))
+        y_value.append((np.sum(confidence[int_idx]) - np.sum(accuracy[int_idx])) / np.sum(int_idx))
+    print(x_value)
+    plt.plot(np.arange(0, 100, 5) / 100., y_value, label="R-DCORAL", marker=".", color="#029386")
+
+    """
+    # Bayesian network
+    theta = torch.load("models/bnn_"+task+".pkl")
+    mis_num, cor_num, train_loss, train_acc, test_loss, test_acc, dis_loss, dis_acc, entropy_dis, entropy_clas, mis_entropy_clas = 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0
+    cor_entropy_clas = 0
+    confidence = torch.FloatTensor([1])
+    accuracy = torch.FloatTensor([0])
+    test_num = 0
+    with torch.no_grad():
+        for data, label in test_loader:
+            test_num += data.shape[0]
+            data = data.cuda()
+            target_out = predict(data, theta)
+            prediction_t = F.softmax(target_out, dim=1)
+            entropy_clas += entropy(prediction_t) / math.log(N_CLASSES, 2)
+            test_loss += float(ce_func(target_out, label))
+            test_acc += torch.sum(torch.argmax(prediction_t, dim=1) == label).float()
+            mis_idx = (torch.argmax(prediction_t, dim=1) != label).nonzero().reshape(-1, )
+            mis_pred = prediction_t[mis_idx]
+            cor_idx = (torch.argmax(prediction_t, dim=1) == label).nonzero().reshape(-1, )
+            cor_pred = prediction_t[cor_idx]
+            mis_entropy_clas += entropy(mis_pred) / math.log(N_CLASSES, 2)
+            mis_num += mis_idx.shape[0]
+            cor_entropy_clas += entropy(cor_pred) / math.log(N_CLASSES, 2)
+            cor_num += cor_idx.shape[0]
+            batch_confidence = torch.max(prediction_t, dim=1).values.cpu()
+            batch_accuracy = (torch.argmax(prediction_t, dim=1) == label).cpu().float()
+            confidence = torch.cat((confidence, batch_confidence), dim=0)
+            accuracy = torch.cat((accuracy, batch_accuracy), dim=0)
+    print (("BNN: test_loss:%.3f, test_acc: %.4f, ent_dis: %.3f, ent_clas: %.3f, mis_ent_clas: %.3f, cor_ent: %.3f") %
+           (test_loss * 1e3 / test_num, test_acc / test_num, entropy_dis / test_num, entropy_clas / test_num,
+            mis_entropy_clas / mis_num, cor_entropy_clas / cor_num))
+    confidence = confidence[1:].numpy()
+    accuracy = accuracy[1:].numpy()
+    x_value = []
+    y_value = []
+    #intervals = [0, 0.27, 0.33, 0.4, 0.5, 0.6, 0.7, 0.72, 0.75, 0.77, 0.8, 0.83, 0.85, 0.87, 0.90, 0.92, 0.94, 0.95,
+    #             0.96, 0.97, 1]  # aw
+    intervals = [0.0, 0.6, 0.65, 0.67, 0.7, 0.72, 0.77, 0.8, 0.85, 0.87, 0.90, 0.92, 0.93, 0.94, 0.95,
+                 0.96, 0.97, 0.98, 0.985, 0.99, 1]  # aw
+    for i in range(len(intervals) - 1):
+        int_idx = ((confidence >= intervals[i]) == (confidence < intervals[i + 1]))  # 0 and 1
+        x_value.append(np.sum(confidence[int_idx]) / np.sum(int_idx))
+        y_value.append((np.sum(confidence[int_idx]) - np.sum(accuracy[int_idx])) / np.sum(int_idx))
+    print(x_value)
+    plt.plot(np.arange(0, 100, 5) / 100., y_value, label="LL-SVI", marker=".", color="#f97306")
+    """
+
+    # Temperature scaling
+    from temperature_scaling import ModelWithTemperature, _ECELoss
+    orig_model = torch.load("models/sourceOnly_" + source + "_" + target + ".pkl", encoding="iso-8859-1")
+    valid_loader = dataloader("OfficeHome/", source, 32, True)
+    scaled_model = ModelWithTemperature(orig_model)
+    scaled_model.set_temperature(valid_loader)
+    mis_num, cor_num, train_loss, train_acc, test_loss, test_acc, dis_loss, dis_acc, entropy_dis, entropy_clas, mis_entropy_clas = 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0
+    cor_entropy_clas = 0
+    confidence = torch.FloatTensor([1])
+    accuracy = torch.FloatTensor([0])
+    test_num = 0
+    with torch.no_grad():
+        for data, label in test_loader:
+            test_num += data.shape[0]
+            data = data.cuda()
+            target_out = scaled_model(data)
+            prediction_t = F.softmax(target_out, dim=1)
+            entropy_clas += entropy(prediction_t) / math.log(N_CLASSES, 2)
+            test_loss += float(ce_func(target_out, label))
+            test_acc += torch.sum(torch.argmax(prediction_t, dim=1) == label).float()
+            mis_idx = (torch.argmax(prediction_t, dim=1) != label).nonzero().reshape(-1, )
+            mis_pred = prediction_t[mis_idx]
+            cor_idx = (torch.argmax(prediction_t, dim=1) == label).nonzero().reshape(-1, )
+            cor_pred = prediction_t[cor_idx]
+            mis_entropy_clas += entropy(mis_pred) / math.log(N_CLASSES, 2)
+            mis_num += mis_idx.shape[0]
+            cor_entropy_clas += entropy(cor_pred) / math.log(N_CLASSES, 2)
+            cor_num += cor_idx.shape[0]
+            batch_confidence = torch.max(prediction_t, dim=1).values.cpu()
+            batch_accuracy = (torch.argmax(prediction_t, dim=1) == label).cpu().float()
+            confidence = torch.cat((confidence, batch_confidence), dim=0)
+            accuracy = torch.cat((accuracy, batch_accuracy), dim=0)
+        print("Temperature scaling: test_loss: %.3f, test_acc: %.4f, ent_clas: %.3f, mis_ent_clas: %.3f, cor_ent: %.3f" % (
+        test_loss * 1e3 / test_num, test_acc / test_num, entropy_clas / test_num, mis_entropy_clas / mis_num,
+        cor_entropy_clas / cor_num))
+    confidence = confidence[1:].numpy()
+    accuracy = accuracy[1:].numpy()
+    x_value = []
+    y_value = []
+    #intervals = [0, 0.27, 0.33, 0.4, 0.5, 0.6, 0.7, 0.72, 0.75, 0.77, 0.8, 0.83, 0.85, 0.87, 0.90, 0.92, 0.94, 0.95,
+    #             0.96, 0.97, 1]  # aw
+    intervals = [0.0, 0.6, 0.65, 0.67, 0.7, 0.72, 0.77, 0.8, 0.85, 0.87, 0.90, 0.92, 0.93, 0.94, 0.95,
+                 0.96, 0.97, 0.98, 0.985, 0.99, 1]  # aw
+    for i in range(len(intervals) - 1):
+        int_idx = ((confidence >= intervals[i]) == (confidence < intervals[i + 1]))  # 0 and 1
+        x_value.append(np.sum(confidence[int_idx]) / np.sum(int_idx))
+        y_value.append((np.sum(confidence[int_idx]) - np.sum(accuracy[int_idx])) / np.sum(int_idx))
+    print(x_value)
+    plt.plot(np.arange(0, 100, 5) / 100., y_value, label="Source-TS", marker=".", color="#96f97b")
+
+    # IW + Fixed R
+    theta = IWNet(N_CLASSES)
+    theta.load_state_dict(torch.load("models/theta_iw_fixed_"+task+".pkl"))
+    discriminator = torch.load("models/dis_iw_fixed_"+task+".pkl", encoding="iso-8859-1")
+    mis_num, cor_num, train_loss, train_acc, test_loss, test_acc, dis_loss, dis_acc, entropy_dis, entropy_clas, mis_entropy_clas = 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0
+    cor_entropy_clas = 0
+    confidence = torch.FloatTensor([1])
+    accuracy = torch.FloatTensor([0])
+    test_num = 0
+    with torch.no_grad():
+        for data, label in test_loader:
+            test_num += data.shape[0]
+            data = data.cuda()
+            pred = F.softmax(discriminator(data).detach(), dim=1)
+            entropy_dis += entropy(pred)
+            r_target = (pred[:, 1] / pred[:, 0]).reshape(-1, 1)
+            target_out = theta(data, None, r_target).detach()
+            prediction_t = F.softmax(target_out, dim=1)
+            entropy_clas += entropy(prediction_t) / math.log(N_CLASSES, 2)
+            test_loss += float(ce_func(target_out, label))
+            test_acc += torch.sum(torch.argmax(prediction_t, dim=1) == label).float()
+            mis_idx = (torch.argmax(prediction_t, dim=1) != label).nonzero().reshape(-1, )
+            mis_pred = prediction_t[mis_idx]
+            cor_idx = (torch.argmax(prediction_t, dim=1) == label).nonzero().reshape(-1, )
+            cor_pred = prediction_t[cor_idx]
+            mis_entropy_clas += entropy(mis_pred) / math.log(N_CLASSES, 2)
+            mis_num += mis_idx.shape[0]
+            cor_entropy_clas += entropy(cor_pred) / math.log(N_CLASSES, 2)
+            cor_num += cor_idx.shape[0]
+            batch_confidence = torch.max(prediction_t, dim=1).values.cpu()
+            batch_accuracy = (torch.argmax(prediction_t, dim=1) == label).cpu().float()
+            confidence = torch.cat((confidence, batch_confidence), dim=0)
+            accuracy = torch.cat((accuracy, batch_accuracy), dim=0)
+        print (("IW with fixed R: test_loss:%.3f, test_acc: %.4f, ent_dis: %.3f, ent_clas: %.3f, mis_ent_clas: %.3f, cor_ent: %.3f") %
+               (test_loss * 1e3 / test_num, test_acc / test_num, entropy_dis / test_num, entropy_clas / test_num,
+                mis_entropy_clas / mis_num, cor_entropy_clas / cor_num))
+    confidence = confidence[1:].numpy()
+    accuracy = accuracy[1:].numpy()
+    x_value = []
+    y_value = []
+    #intervals = [0, 0.27, 0.33, 0.4, 0.5, 0.6, 0.7, 0.72, 0.75, 0.77, 0.8, 0.83, 0.85, 0.87, 0.90, 0.92, 0.94, 0.95,
+    #             0.96, 0.97, 1]  # aw
+    intervals = [0.0, 0.6, 0.65, 0.67, 0.7, 0.72, 0.77, 0.8, 0.85, 0.87, 0.90, 0.92, 0.93, 0.94, 0.95,
+                 0.96, 0.97, 0.98, 0.985, 0.99, 1]  # aw
+    for i in range(len(intervals) - 1):
+        int_idx = ((confidence >= intervals[i]) == (confidence < intervals[i + 1]))  # 0 and 1
+        x_value.append(np.sum(confidence[int_idx]) / np.sum(int_idx))
+        y_value.append((np.sum(confidence[int_idx]) - np.sum(accuracy[int_idx])) / np.sum(int_idx))
+    print(x_value)
+    plt.plot(np.arange(0, 100, 5)/100., y_value, label="IW", marker=".", color="#c20078")
+
+    # IW + Alternative Training
+    theta = IWNet(N_CLASSES)
+    theta.load_state_dict(torch.load("models/theta_iw_alter_" + task + ".pkl"))
+    discriminator = torch.load("models/dis_iw_alter_" + task + ".pkl", encoding="iso-8859-1")
+    mis_num, cor_num, train_loss, train_acc, test_loss, test_acc, dis_loss, dis_acc, entropy_dis, entropy_clas, mis_entropy_clas = 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0
+    cor_entropy_clas = 0
+    confidence = torch.FloatTensor([1])
+    accuracy = torch.FloatTensor([0])
+    test_num = 0
+    with torch.no_grad():
+        for data, label in test_loader:
+            test_num += data.shape[0]
+            data = data.cuda()
+            pred = F.softmax(discriminator(data).detach(), dim=1)
+            entropy_dis += entropy(pred)
+            r_target = (pred[:, 1] / pred[:, 0]).reshape(-1, 1)
+            target_out = theta(data, None, r_target).detach()
+            prediction_t = F.softmax(target_out, dim=1)
+            entropy_clas += entropy(prediction_t) / math.log(N_CLASSES, 2)
+            test_loss += float(ce_func(target_out, label))
+            test_acc += torch.sum(torch.argmax(prediction_t, dim=1) == label).float()
+            mis_idx = (torch.argmax(prediction_t, dim=1) != label).nonzero().reshape(-1, )
+            mis_pred = prediction_t[mis_idx]
+            cor_idx = (torch.argmax(prediction_t, dim=1) == label).nonzero().reshape(-1, )
+            cor_pred = prediction_t[cor_idx]
+            mis_entropy_clas += entropy(mis_pred) / math.log(N_CLASSES, 2)
+            mis_num += mis_idx.shape[0]
+            cor_entropy_clas += entropy(cor_pred) / math.log(N_CLASSES, 2)
+            cor_num += cor_idx.shape[0]
+            batch_confidence = torch.max(prediction_t, dim=1).values.cpu()
+            batch_accuracy = (torch.argmax(prediction_t, dim=1) == label).cpu().float()
+            confidence = torch.cat((confidence, batch_confidence), dim=0)
+            accuracy = torch.cat((accuracy, batch_accuracy), dim=0)
+        print (("IW with alternatively trained R: test_loss:%.3f, test_acc: %.4f, ent_dis: %.3f, ent_clas: %.3f, mis_ent_clas: %.3f, cor_ent: %.3f") %
+               (test_loss * 1e3 / test_num, test_acc / test_num, entropy_dis / test_num, entropy_clas / test_num,
+                mis_entropy_clas / mis_num, cor_entropy_clas / cor_num))
+    confidence = confidence[1:].numpy()
+    accuracy = accuracy[1:].numpy()
+    x_value = []
+    y_value = []
+    intervals = [0.0, 0.6, 0.65, 0.67, 0.7, 0.72, 0.77, 0.8, 0.85, 0.87, 0.90, 0.92, 0.93, 0.94, 0.95,
+                 0.96, 0.97, 0.98, 0.985, 0.99, 1]  # aw
+    for i in range(len(intervals) - 1):
+        int_idx = ((confidence >= intervals[i]) == (confidence < intervals[i + 1]))  # 0 and 1
+        x_value.append(np.sum(confidence[int_idx]) / np.sum(int_idx))
+        y_value.append((np.sum(confidence[int_idx]) - np.sum(accuracy[int_idx])) / np.sum(int_idx))
+    print(x_value)
+    plt.plot(np.arange(0, 100, 5) / 100., y_value, label="E2IW", marker=".", color="#ff81c0")
+
+    x_value = [str(x)[:5] for x in x_value]
+    plt.xticks(np.arange(0, 110, 10) / 100., x_value[1::2], rotation=0)
+    plt.xlabel("Confidence")
+    plt.ylabel("Confidence - Accuracy")
+    plt.grid(axis="both")
+    plt.legend()
+    #task_dic = {"aw": "Amazon -> Webcam", "ad": "Amazon -> Dslr", "wa": "Webcam -> Amazon", "wd": "Webcam -> Dslr", "da": "Dslr -> Amazon", "dw": "Dslr -> Webcam"}
+    task_dic = {"AC": "Art -> Clipart", "AP": "Art -> Product", "AR": "Art -> RealWorld", "CA": "Clipart -> Art", "CP": "Clipart -> Product", "CR": "Clipart -> RealWorld",
+                "PA": "Product -> Art", "PC": "Product -> Clipart", "PR": "Product -> RealWorld", "RA": "RealWorld -> Art", "RC": "RealWorld -> Clipart", "RP": "RealWorld -> Product"}
+    plt.title("Confidence-accuracy plot on task: "+task_dic[task])
+    plt.savefig("rec/conf_acc_"+task+".png")
 
 CONFIG = {
     #"lr1": 5e-4,
@@ -607,7 +1263,6 @@ def acc_conf_plot(source, target):
     task = source[0] + target[0]
     intervals = [0.0, 0.6, 0.7, 0.72, 0.75, 0.77, 0.8, 0.83, 0.85, 0.87, 1]
     #intervals = [0.0, 0.6, 0.9, 0.94, 0.99, 1] #wd
-
 
     ### Source only
     test_loader = dataloader("office/", target, 32, False)
@@ -651,7 +1306,7 @@ def acc_conf_plot(source, target):
         x_value.append(np.sum(confidence[int_idx]) / np.sum(int_idx))
         y_value.append((np.sum(confidence[int_idx]) - np.sum(accuracy[int_idx])) / np.sum(int_idx))
     print(x_value)
-    plt.plot(np.arange(0, 100, 10) / 100., y_value, label="Source", marker="^", color="#e50000", linewidth=2.5, markersize=12)
+    plt.plot(np.arange(0, 100, 5) / 100., y_value, label="Source", marker="^", color="#e50000", linewidth=2.5, markersize=12)
 
     # TS
     from temperature_scaling import ModelWithTemperature, _ECELoss
@@ -697,8 +1352,8 @@ def acc_conf_plot(source, target):
         x_value.append(np.sum(confidence[int_idx]) / np.sum(int_idx))
         y_value.append((np.sum(confidence[int_idx]) - np.sum(accuracy[int_idx])) / np.sum(int_idx))
     print(x_value)
-    plt.plot(np.arange(0, 100, 10) / 100., y_value, label="TS", marker="v", color="#96f97b", linewidth=2.5, markersize=12)
-    
+    plt.plot(np.arange(0, 100, 5) / 100., y_value, label="TS", marker="v", color="#96f97b", linewidth=2.5, markersize=12)
+    """
     # BNN
     test_num = 0
     mis_num, cor_num, train_loss, train_acc, test_loss, test_acc, dis_loss, dis_acc, entropy_dis, entropy_clas, mis_entropy_clas = 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0
@@ -738,8 +1393,8 @@ def acc_conf_plot(source, target):
         x_value.append(np.sum(confidence[int_idx]) / np.sum(int_idx))
         y_value.append((np.sum(confidence[int_idx]) - np.sum(accuracy[int_idx])) / np.sum(int_idx))
     print(x_value)
-    plt.plot(np.arange(0, 100, 10) / 100., y_value, label="LL-SVI", marker="o", color="#f97306", linewidth=2.5, markersize=12)
-
+    plt.plot(np.arange(0, 100, 5) / 100., y_value, label="LL-SVI", marker="o", color="#f97306", linewidth=2.5, markersize=12)
+    """
     # IW
     theta = IWNet(N_CLASSES)
     theta.load_state_dict(torch.load("models/theta_iw_fixed_" + task + ".pkl"))
@@ -786,8 +1441,8 @@ def acc_conf_plot(source, target):
         x_value.append(np.sum(confidence[int_idx]) / np.sum(int_idx))
         y_value.append((np.sum(confidence[int_idx]) - np.sum(accuracy[int_idx])) / np.sum(int_idx))
     print(x_value)
-    plt.plot(np.arange(0, 100, 10) / 100., y_value, label="IW", marker="s", color="#c20078", linewidth=2.5, markersize=12)
-
+    plt.plot(np.arange(0, 100, 5) / 100., y_value, label="IW", marker="s", color="#c20078", linewidth=2.5, markersize=12)
+    """
     # DeepCORAL
     theta = torch.load("models/deepcoral_" + source + "_" + target + ".pkl", encoding="iso-8859-1")
     theta.isTrain = False
@@ -831,8 +1486,8 @@ def acc_conf_plot(source, target):
         x_value.append(np.sum(confidence[int_idx]) / np.sum(int_idx))
         y_value.append((np.sum(confidence[int_idx]) - np.sum(accuracy[int_idx])) / np.sum(int_idx))
     print(x_value)
-    plt.plot(np.arange(0, 100, 10) / 100., y_value, label="DCORAL", marker="D", color="#95d0fc", linewidth=2.5, markersize=12)
-
+    plt.plot(np.arange(0, 100, 5) / 100., y_value, label="DCORAL", marker="D", color="#95d0fc", linewidth=2.5, markersize=12)
+    """
 
     # E2C2-DCORAL
     theta = thetaNet(2048, N_CLASSES)
@@ -890,7 +1545,7 @@ def acc_conf_plot(source, target):
         x_value.append(np.sum(confidence[int_idx]) / np.sum(int_idx))
         y_value.append((np.sum(confidence[int_idx]) - np.sum(accuracy[int_idx])) / np.sum(int_idx))
     print(x_value)
-    plt.plot(np.arange(0, 100, 10) / 100., y_value, label="$\mathregular{E2C2_d}$", marker="d", color="#15b01a", linewidth=2.5, markersize=12)
+    plt.plot(np.arange(0, 100, 5) / 100., y_value, label="$\mathregular{RESCUE}$", marker="d", color="#15b01a", linewidth=2.5, markersize=12)
 
     x_value = [str(x)[:5] for x in x_value]
     x_axis = np.concatenate((x_value[0::2], np.array([x_value[-1]])))
@@ -909,10 +1564,17 @@ def acc_conf_plot(source, target):
     #            "RA": "RealWorld -> Art", "RC": "RealWorld -> Clipart", "RP": "RealWorld -> Product"}
     plt.title("Confidence-accuracy plot on task: " + task_dic[task], fontdict={"weight":"normal", "size":24})
     #plt.savefig("rec/conf_acc_part_" + task + ".png")
-    plt.savefig("rec/conf_acc_part_"+task+".png")
+    import os
+    if not os.path.exists("log/fig7/"):
+        os.mkdir("log/fig7/")
+    plt.savefig("log/fig7/conf_acc_rescue_"+task+".png")
 
 if __name__=="__main__":
     torch.manual_seed(200)
-    source = "webcam"
-    target = "dslr"
+    source = "amazon"
+    target = "webcam"
+    #confidence_accuracy_plot(source, target)
     acc_conf_plot(source, target)
+    """
+    a-d, w-a, d-a need to retrain DeepCORAL for inconsistent network structure
+    """
