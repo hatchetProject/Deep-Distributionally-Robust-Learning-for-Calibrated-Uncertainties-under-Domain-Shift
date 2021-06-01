@@ -14,7 +14,9 @@
 
 We provide the introduction to the folders and files in this section
 * model_layers.py defines the foundations of DRL, DRST and DRSSL models;
+* train_office.py and train_home.py contains the code for running experiments on Office31 and Office-Home;
 * visda_exp.py contained the DRST training code for VisDA 2017 dataset;
-* 
-* FixMatch-pytorch-master contains the SSL training code. train.py contains the code for achieving pretrained models, while train_var.py contains the code for DRSSL.
-
+* tempertaure_scaling.py contains the code for implementing TS; 
+* FixMatch-pytorch-master contains the SSL training code. train.py contains the code for achieving pretrained models, while train_var.py contains the code for DRSSL;
+* imagenet_train.py contains the code for training on ImageNet using DRL;
+* Other files are included for plotting and discussion.
