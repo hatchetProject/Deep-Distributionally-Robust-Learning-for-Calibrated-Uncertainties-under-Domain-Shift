@@ -1,3 +1,7 @@
+"""
+    This file does GradCam visualization
+    The users can use this as a reference
+"""
 import argparse
 import cv2
 import numpy as np
@@ -488,7 +492,7 @@ if __name__ == '__main__':
             model.load_state_dict(state, strict=True)
             save_gif(model, input, directory_cbst, j)
 
-        """
+
         ## Load model params
         # ASG model
         model = models.resnet101(pretrained=False)
@@ -622,13 +626,3 @@ if __name__ == '__main__':
 
         #cv2.imwrite(directory + 'gb2.jpg', gb)
         cv2.imwrite(directory + str(i) + '_cam_gb3.jpg', cam_gb)
-        """
-    """
-    saved 
-    index = 4, others: motorcycle, ours: car
-    index = 1, cbst, asg:bus, crst: car, ours: truck
-    index=5, others: train, ours: truck
-    index=6, others: horse, ours: car (intuitive: the image is a giraffe, but no such class)
-    index=17, others: horse, ours:bicycle
-    index=27, others: motorcycle, ours:skateboard 
-    """

@@ -525,15 +525,15 @@ if __name__=="__main__":
     x_t = np.load("data/gaussian3/x_t.npy")
     y_s = np.load("data/gaussian3/y_s.npy")
     y_t = np.load("data/gaussian3/y_t.npy")
-    """
+
     x_s, x_t, y_s, y_t = torch.FloatTensor(x_s), torch.FloatTensor(x_t), torch.FloatTensor(y_s), torch.FloatTensor(y_t)
     print (x_s.shape, y_s.shape, x_t.shape, y_t.shape)
     ground_r_s = multivariate_normal.pdf(x_s, mu_s, var_s) / multivariate_normal.pdf(x_s, mu_t, var_t)
     ground_r_t = multivariate_normal.pdf(x_t, mu_s, var_s) / multivariate_normal.pdf(x_t, mu_t, var_t)
 
-    #train_end2end(x_s, y_s, x_t, y_t, ground_r_s, ground_r_t)
-    #train_accurate(x_s, y_s, x_t, y_t, ground_r_s, ground_r_t)
-    #plot_fig_accurate(x_s, y_s, x_t, y_t, ground_r_s, ground_r_t, "log/gauss_plot/accurate_plot.jpg")
+    train_end2end(x_s, y_s, x_t, y_t, ground_r_s, ground_r_t)
+    train_accurate(x_s, y_s, x_t, y_t, ground_r_s, ground_r_t)
+    plot_fig_accurate(x_s, y_s, x_t, y_t, ground_r_s, ground_r_t, "log/gauss_plot/accurate_plot.jpg")
     plot_fig_end2end(x_s, y_s, x_t, y_t, ground_r_s, ground_r_t, "log/gauss_plot/end2end_plot1.jpg")
     
     bandwidths = [0.08, 0.05, 0.04, 0.03, 0.02, 0.01, 0.008, 0.006, 0.004, 0.002, 0.001, 0.0005]
@@ -553,9 +553,10 @@ if __name__=="__main__":
     
     
     plot_fig3_a()
+
     """
-    plot_fig3_a()
-    # eliminate 0.008,402.3879970634425, 0.03817821, 0.02952695, 0.02937207
+    # plot data, the likelihood and losses are put here for faster visualization
+    # this part also does the KDE estimation
     bandwidths = np.array([0.2, 0.05, 0.04, 0.03, 0.02, 0.01, 0.006, 0.004, 0.002, 0.001])
     likelihood = np.array(
         [-934.9857878579751, -482.7166757106748, -381.8943244564515, -246.66452098330416, -50.24848524856729,
@@ -571,13 +572,11 @@ if __name__=="__main__":
     std_loss = np.zeros(loss1.shape)
     for i in range(loss1.shape[0]):
         std_loss[i] = np.std([loss1[i], loss2[i], loss3[i]], ddof=1)
-    #plot_logloss(likelihood, mean_loss, std_loss)
-
-    #bandwidth = 0.001
     bandwidth = 0.2
     likelihood, src_weight, tgt_weight = kde_estimation(x_s, x_t, band=bandwidth)
     print("Bandwidth {} has likelihood {}".format(bandwidth, likelihood))
     x_s, x_t, y_s, y_t = torch.FloatTensor(x_s), torch.FloatTensor(x_t), torch.FloatTensor(y_s), torch.FloatTensor(y_t)
     src_weight, tgt_weight = torch.tensor(src_weight), torch.tensor(tgt_weight)
     loss = plot_fig_accurate(x_s, y_s, x_t, y_t, src_weight, tgt_weight, "log/finals/fig3_b.jpg")
+    """
 

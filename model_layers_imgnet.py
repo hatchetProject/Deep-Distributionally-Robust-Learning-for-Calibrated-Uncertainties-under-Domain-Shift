@@ -13,18 +13,7 @@ class ClassificationFunctionAVH(torch.autograd.Function):
         # Normalize the output of the classifier before the last layer using the criterion of AVH
         # code here
         exp_temp = input.mm(weight.t()).mul(r_st)
-        #s = 1  # a hyperparameter for adjusting the scale of the output logits
-        #exp_temp = s*avh_batch_score(input, weight.t()).mul(r_st)
-        # forward output for confidence regularized training KL version, r is some ratio instead of density ratio
-        #r = 0.001 # another hyperparameter that need to be tuned
-        #new_exp_temp = (exp_temp + r*Y)/(r*Y + torch.ones(Y.shape).cuda())
-        #exp_temp = new_exp_temp
-        #orig_pred = torch.argmax(exp_temp, dim=1)
-        #new_pred = torch.argmax(new_exp_temp, dim=1)
-        #for idx in range(orig_pred.shape[0]):
-        #    exp_temp[idx] = torch.where(orig_pred[idx] == new_pred[idx], new_exp_temp[idx], exp_temp[idx])
 
-        # does bias matter? check this
         if bias is not None:
             exp_temp += bias.unsqueeze(0).expand_as(exp_temp)
         output = F.softmax(exp_temp, dim=1)

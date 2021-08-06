@@ -384,8 +384,8 @@ def eval_epoch_by_epoch():
         np.save(directory + "armst_total_odd.npy", armst_total)
 
 if __name__=="__main__":
-    """
-    #get_feat_src_tgt()
+
+    get_feat_src_tgt()
     method = "armst"
     armst_src_feat = "log/best_softmax_src.npy"
     armst_src_label = "log/tsne_true_label_src.npy"
@@ -411,5 +411,5 @@ if __name__=="__main__":
     #train_re_by_class_combined(src_feat_path, src_label_path, tgt_feat_path, tgt_label_path)
     eval_shift(arm_src_feat, arm_src_label, arm_tgt_feat, arm_tgt_label, "ARM")
     eval_shift(armst_src_feat, armst_src_label, armst_tgt_feat, armst_tgt_label, "ARMST")
-    """
+    
     eval_epoch_by_epoch()
