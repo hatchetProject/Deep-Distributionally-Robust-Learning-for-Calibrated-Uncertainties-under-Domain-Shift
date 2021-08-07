@@ -35,7 +35,7 @@ For Office31 and OfficeHome, the two datasets are trained in a quite similar way
 Take the one of the tasks in the Office31 dataset as example, the code can be run by directly using:
 
 ```
-python office_exp.py --num_classes=31 --src=amazon --tgt==webcam
+python office_exp.py --num_classes=31 --src=amazon --tgt=webcam
 ```
 
 When changed to OfficeHome dataset, the users can change the number of classes into 65 and assign the **path_dict** new values with the intended path. Do not forget to write new paths for the saved
@@ -54,9 +54,9 @@ The specific hyperparameters in the code can be changed via the **CONFIG** param
 
 #### ImageNet 
 
-ImageNet training process is directly modified from the official PyTorch training script. The users can directly run the script and achieve corresponding calibration scores. Note that 
-the code is not written in a parallelism way so batch size is set to a small value and the users need to make sure they have abundant computation resources before running it. Code can be 
-run by:
+ImageNet training process is directly modified from the official PyTorch training script. The users can directly run the script and achieve corresponding calibration scores (Brier score and ECE). However, it would take 
+a long time since it also does the training process. Function ts_model() contains the score calculation. Note that the code is not written in a parallelism way so batch size is set to a small value and the users need to 
+make sure they have abundant computation resources before running it. Code can be run by:
 
 ```
 python imagenet_train.py
