@@ -2056,7 +2056,7 @@ def office_acc_appendix(source, target):
 
 def ece_compare_appendix(source, target):
     from imagenet_train import ece_score
-    bins = 10
+    bins = 15
     #label = np.load("log/office_label" + source[0] + target[0] + ".npy")
     #iid_softmax = np.load("log/office_src_softmax" + source[0] + target[0] + ".npy", allow_pickle=True)
     #ts_softmax = np.load("log/office_ts_softmax" + source[0] + target[0] + ".npy", allow_pickle=True)
