@@ -2084,7 +2084,7 @@ def ece_compare_appendix(source, target):
 
 def ece_visda():
     from imagenet_train import ece_score
-    bins = 10
+    bins = 15
     label = np.load("log/labels4.npy", allow_pickle=True)
     iid_softmax = np.load("log/asg_softmax2.npy", allow_pickle=True)
     ts_softmax = np.load("log/ts_softmax2.npy", allow_pickle=True)
